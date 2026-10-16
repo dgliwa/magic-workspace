@@ -1,5 +1,6 @@
-const API = "https://api2.moxfield.com";
-const USER_AGENT = "MagicWorkspace/0.2 (+https://github.com/dgliwa/magic-workspace)";
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
+const helper = fileURLToPath(new URL("../python/moxfield_account.py", import.meta.url));
 function safeCredential(value, label) {
     const trimmed = value.trim();
     if (!trimmed)
@@ -8,31 +9,43 @@ function safeCredential(value, label) {
         throw new Error(`${label} cannot contain line breaks.`);
     return trimmed;
 }
-async function jsonRequest(url, init) {
-    const response = await fetch(url, {
-        ...init,
-        redirect: "error",
-        headers: {
-            "User-Agent": USER_AGENT,
-            Accept: "application/json,text/plain,*/*",
-            Origin: "https://moxfield.com",
-            Referer: "https://moxfield.com/",
-            ...init.headers,
-        },
+function runHelper(mode, credential) {
+    return new Promise((resolve, reject) => {
+        const child = spawn("python3", [helper, mode], { stdio: ["pipe", "pipe", "pipe"] });
+        const stdout = [];
+        const stderr = [];
+        let size = 0;
+        const timeout = setTimeout(() => child.kill("SIGKILL"), 60_000);
+        child.stdout.on("data", chunk => {
+            size += chunk.length;
+            if (size > 32 * 1024 * 1024)
+                child.kill("SIGKILL");
+            else
+                stdout.push(chunk);
+        });
+        child.stderr.on("data", chunk => stderr.push(chunk));
+        child.on("error", error => {
+            clearTimeout(timeout);
+            reject(error);
+        });
+        child.on("close", code => {
+            clearTimeout(timeout);
+            if (code !== 0) {
+                reject(new Error(Buffer.concat(stderr).toString("utf8").trim() || `Moxfield helper exited with code ${code}.`));
+                return;
+            }
+            try {
+                resolve(JSON.parse(Buffer.concat(stdout).toString("utf8")));
+            }
+            catch {
+                reject(new Error("Moxfield helper returned invalid JSON."));
+            }
+        });
+        child.stdin.end(JSON.stringify({ credential }));
     });
-    if (!response.ok)
-        throw new Error(`Moxfield request failed with HTTP ${response.status}.`);
-    return response.json();
 }
 export async function exchangeSessionCookie(cookieHeader) {
-    const payload = await jsonRequest(`${API}/v1/startup/authenticated`, {
-        method: "POST",
-        headers: {
-            Cookie: safeCredential(cookieHeader, "Moxfield cookie header"),
-            "Content-Type": "application/json",
-        },
-        body: "{}",
-    });
+    const payload = await runHelper("cookie", safeCredential(cookieHeader, "Moxfield cookie header"));
     const refresh = payload.refresh;
     if (!refresh?.access_token)
         throw new Error("Moxfield did not return an authenticated access token.");
@@ -47,13 +60,7 @@ export async function exchangeSessionCookie(cookieHeader) {
         },
     };
 }
-export async function discoverMoxfieldDecks(token) {
-    const payload = await jsonRequest(`${API}/v3/decks`, {
-        method: "GET",
-        headers: {
-            Authorization: `Bearer ${safeCredential(token, "Moxfield bearer token")}`,
-        },
-    });
+export function normalizeDiscoveredDecks(payload) {
     const decks = Array.isArray(payload.decks) ? payload.decks : [];
     return decks.map((deck) => {
         const publicId = String(deck.publicId ?? "").trim();
@@ -69,4 +76,8 @@ export async function discoverMoxfieldDecks(token) {
             updatedAt: deck.lastUpdatedAtUtc ? String(deck.lastUpdatedAtUtc) : undefined,
         };
     });
+}
+export async function discoverMoxfieldDecks(token) {
+    const payload = await runHelper("bearer", safeCredential(token, "Moxfield bearer token"));
+    return normalizeDiscoveredDecks(payload);
 }

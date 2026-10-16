@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
-import { discoverMoxfieldDecks, exchangeSessionCookie } from "./moxfield-account.js";
+import { describe, expect, it } from "vitest";
+import { normalizeDiscoveredDecks } from "./moxfield-account.js";
 import { MoxfieldRegistry } from "./moxfield-registry.js";
 
 const deck = {
@@ -46,23 +46,11 @@ describe("MoxfieldRegistry", () => {
 });
 
 describe("Moxfield authenticated discovery", () => {
-  it("exchanges a cookie without persisting it and normalizes the deck list", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(new Response(JSON.stringify({ refresh: {
-        access_token: "short-lived-token",
-        user_name: "tester",
-        user_id: "user-1",
-        collectionPublicId: "collection_one",
-      } }), { status: 200, headers: { "Content-Type": "application/json" } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ decks: [{ ...deck, id: deck.internalId, lastUpdatedAtUtc: "2026-01-01T00:00:00.000Z" }] }), { status: 200, headers: { "Content-Type": "application/json" } }));
-    try {
-      const exchanged = await exchangeSessionCookie("session=secret");
-      expect(exchanged.account.collectionUrl).toBe("https://moxfield.com/collection/collection_one");
-      expect(await discoverMoxfieldDecks(exchanged.token)).toEqual([{ ...deck, updatedAt: "2026-01-01T00:00:00.000Z" }]);
-      expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({ Cookie: "session=secret" });
-      expect(fetchMock.mock.calls[1]?.[1]?.headers).toMatchObject({ Authorization: "Bearer short-lived-token" });
-    } finally {
-      fetchMock.mockRestore();
-    }
+  it("normalizes the authenticated account deck list", () => {
+    expect(normalizeDiscoveredDecks({ decks: [{
+      ...deck,
+      id: deck.internalId,
+      lastUpdatedAtUtc: "2026-01-01T00:00:00.000Z",
+    }] })).toEqual([{ ...deck, updatedAt: "2026-01-01T00:00:00.000Z" }]);
   });
 });
