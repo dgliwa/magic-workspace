@@ -12,7 +12,7 @@
       },
       "cachePath": {
         "type": "string",
-        "description": "SQLite Scryfall cache path."
+        "description": "SQLite Magic Workspace data and Scryfall cache path."
       }
     },
     "additionalProperties": false
@@ -22,6 +22,10 @@
   },
   "contracts": {
     "tools": [
+      "magic_moxfield_registry_status",
+      "magic_moxfield_registry_list",
+      "magic_moxfield_registry_get",
+      "magic_moxfield_registry_refresh",
       "magic_deck_list",
       "magic_deck_get",
       "magic_moxfield_deck_fetch",
@@ -39,6 +43,9 @@
     ]
   },
   "toolMetadata": {
+    "magic_moxfield_registry_refresh": {
+      "sideEffecting": true
+    },
     "magic_deck_sync": {
       "sideEffecting": true
     },

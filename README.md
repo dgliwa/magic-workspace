@@ -4,7 +4,22 @@ An OpenClaw plugin that treats Moxfield as the source of truth, `~/dev/magic-dec
 
 ## Tools
 
-### Decks
+### Moxfield account registry
+
+- `magic_moxfield_registry_status` — show the discovered account, public collection URL, and cache health
+- `magic_moxfield_registry_list` — list discovered account decks; missing remote decks are archived
+- `magic_moxfield_registry_get` — read a normalized SQLite deck snapshot
+- `magic_moxfield_registry_refresh` — confirmation-gated refresh from stored public URLs
+
+Account discovery is an explicit bootstrap operation run over SSH:
+
+```bash
+npm run moxfield:import
+```
+
+The command securely prompts for the `Cookie` request-header value from a logged-in Moxfield browser. Terminal echo is disabled. It exchanges the cookie for a short-lived bearer token, stores only account metadata and public deck/collection URLs, refreshes publicly readable deck snapshots, and discards both credentials. Run it again only when you need to discover newly created decks. Private or unlisted decks are recorded but may not refresh without another authenticated session.
+
+### Legacy filesystem decks
 
 - `magic_deck_list` — list cached Commander decks and active status
 - `magic_deck_get` — read a complete local deck
@@ -31,7 +46,7 @@ The Scryfall cache uses the official daily `oracle_cards` bulk dataset and store
 
 ## Moxfield writes
 
-Version 0.1 reads public Moxfield decks and collections and refreshes the local cache. Remote Moxfield mutations are deliberately not exposed yet. Moxfield has no supported public API; authenticated writes will be added as a separate hash-bound prepare/review/apply workflow after browser-session authentication and current mutation payloads are verified.
+Magic Workspace uses authentication only for explicit account discovery. It does not retain Moxfield credentials or expose remote mutations. Discovered deck metadata and normalized snapshots live in the plugin SQLite database; public URLs are used for later refreshes. The existing `~/dev/magic-decks` text files remain available through the legacy tools during migration but are no longer required for newly discovered deck snapshots. Moxfield has no supported public API; authenticated writes will be added as a separate hash-bound prepare/review/apply workflow after browser-session authentication and current mutation payloads are verified.
 
 ## Configuration
 
