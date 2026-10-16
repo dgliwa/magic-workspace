@@ -12,7 +12,7 @@ const deck = {
 };
 
 describe("MoxfieldRegistry", () => {
-  it("stores discovery, normalized snapshots, and archives missing decks", () => {
+  it("stores discovery, normalized snapshots, tags, and archives missing decks", () => {
     const registry = new MoxfieldRegistry(":memory:");
     try {
       registry.importDiscovery({
@@ -33,12 +33,29 @@ describe("MoxfieldRegistry", () => {
         ],
       });
 
-      expect(registry.status()).toMatchObject({ activeDecks: 1, cachedDecks: 1 });
-      expect(registry.get(deck.publicId)).toMatchObject({ name: "Deck One", cards: [{ name: "Commander" }, { name: "Sol Ring" }] });
+      expect(registry.status()).toMatchObject({ activeDecks: 1, cachedDecks: 1, untaggedActiveDecks: 1 });
+      expect(registry.get(deck.publicId)).toMatchObject({ name: "Deck One", tags: [], cards: [{ name: "Commander" }, { name: "Sol Ring" }] });
+      expect(registry.addTag(deck.publicId, "Built")).toEqual({ publicId: deck.publicId, tags: ["built"] });
+      expect(registry.addTag(deck.publicId, "precon")).toEqual({ publicId: deck.publicId, tags: ["built", "precon"] });
+      expect(registry.list({ tag: "BUILT" })).toHaveLength(1);
+      expect(registry.tagSummary()).toEqual({ tags: [{ tag: "built", deckCount: 1 }, { tag: "precon", deckCount: 1 }], untaggedActiveDecks: 0 });
+      expect(registry.removeTag(deck.publicId, "precon")).toEqual({ publicId: deck.publicId, tags: ["built"] });
+      expect(registry.setTags(deck.publicId, ["testing", "Built", "built"])).toEqual({ publicId: deck.publicId, tags: ["built", "testing"] });
 
       registry.importDiscovery({ userName: "tester" }, [], "2026-02-01T00:00:00.000Z");
       expect(registry.list()).toEqual([]);
-      expect(registry.list({ includeArchived: true })[0]).toMatchObject({ publicId: deck.publicId, archivedAt: "2026-02-01T00:00:00.000Z" });
+      expect(registry.list({ includeArchived: true })[0]).toMatchObject({ publicId: deck.publicId, tags: ["built", "testing"], archivedAt: "2026-02-01T00:00:00.000Z" });
+    } finally {
+      registry.close();
+    }
+  });
+
+  it("rejects invalid tags and unknown decks", () => {
+    const registry = new MoxfieldRegistry(":memory:");
+    try {
+      expect(() => registry.addTag("missing", "built")).toThrow(/Unknown Moxfield deck/);
+      registry.importDiscovery({}, [deck]);
+      expect(() => registry.addTag(deck.publicId, "not a tag")).toThrow(/Tags must/);
     } finally {
       registry.close();
     }
@@ -46,11 +63,13 @@ describe("MoxfieldRegistry", () => {
 });
 
 describe("Moxfield authenticated discovery", () => {
-  it("normalizes the authenticated account deck list", () => {
-    expect(normalizeDiscoveredDecks({ decks: [{
-      ...deck,
-      id: deck.internalId,
-      lastUpdatedAtUtc: "2026-01-01T00:00:00.000Z",
-    }] })).toEqual([{ ...deck, updatedAt: "2026-01-01T00:00:00.000Z" }]);
+  it("normalizes authenticated account deck list", () => {
+    expect(normalizeDiscoveredDecks({
+      decks: [{
+        ...deck,
+        id: deck.internalId,
+        lastUpdatedAtUtc: "2026-01-01T00:00:00.000Z",
+      }],
+    })).toEqual([{ ...deck, updatedAt: "2026-01-01T00:00:00.000Z" }]);
   });
 });

@@ -20,6 +20,11 @@ export declare class MoxfieldRegistry {
     constructor(path: string);
     close(): void;
     importDiscovery(account: MoxfieldAccount, decks: DiscoveredDeck[], now?: string): {
+        tags: {
+            tag: string;
+            deckCount: number;
+        }[];
+        untaggedActiveDecks: number;
         path: string;
         account: MoxfieldAccount & {
             discoveredAt?: string;
@@ -33,7 +38,9 @@ export declare class MoxfieldRegistry {
     list(options?: {
         includeArchived?: boolean;
         query?: string;
+        tag?: string;
     }): {
+        tags: string[];
         publicId: string;
         internalId: string | undefined;
         name: string;
@@ -49,11 +56,37 @@ export declare class MoxfieldRegistry {
     get(publicId: string): DeckSnapshot & {
         visibility?: string;
         archivedAt?: string;
+        tags: string[];
+    };
+    setTags(publicId: string, tags: string[], now?: string): {
+        publicId: string;
+        tags: string[];
+    };
+    addTag(publicId: string, tag: string, now?: string): {
+        publicId: string;
+        tags: string[];
+    };
+    removeTag(publicId: string, tag: string): {
+        publicId: string;
+        tags: string[];
+    };
+    tags(publicId: string): string[];
+    tagSummary(): {
+        tags: {
+            tag: string;
+            deckCount: number;
+        }[];
+        untaggedActiveDecks: number;
     };
     account(): MoxfieldAccount & {
         discoveredAt?: string;
     };
     status(): {
+        tags: {
+            tag: string;
+            deckCount: number;
+        }[];
+        untaggedActiveDecks: number;
         path: string;
         account: MoxfieldAccount & {
             discoveredAt?: string;
@@ -63,4 +96,5 @@ export declare class MoxfieldRegistry {
         archivedDecks: number;
         cachedDecks: number;
     };
+    private assertDeck;
 }

@@ -8,9 +8,8 @@ export class MoxfieldRegistry {
         this.path = path;
         if (path !== ":memory:") {
             mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-            if (existsSync(path) && !lstatSync(path).isFile()) {
+            if (existsSync(path) && !lstatSync(path).isFile())
                 throw new Error("Magic Workspace database must be a regular file.");
-            }
         }
         this.db = new DatabaseSync(path);
         this.db.exec(`
@@ -38,8 +37,7 @@ export class MoxfieldRegistry {
         archived_at TEXT,
         snapshot_refreshed_at TEXT
       );
-      CREATE INDEX IF NOT EXISTS moxfield_decks_active
-        ON moxfield_decks(archived_at, name);
+      CREATE INDEX IF NOT EXISTS moxfield_decks_active ON moxfield_decks(archived_at,name);
       CREATE TABLE IF NOT EXISTS moxfield_deck_cards (
         public_id TEXT NOT NULL REFERENCES moxfield_decks(public_id) ON DELETE CASCADE,
         board TEXT NOT NULL,
@@ -50,10 +48,16 @@ export class MoxfieldRegistry {
         moxfield_card_id TEXT,
         set_code TEXT,
         collector_number TEXT,
-        PRIMARY KEY(public_id, board, position)
+        PRIMARY KEY(public_id,board,position)
       );
-      CREATE INDEX IF NOT EXISTS moxfield_deck_cards_name
-        ON moxfield_deck_cards(name);
+      CREATE INDEX IF NOT EXISTS moxfield_deck_cards_name ON moxfield_deck_cards(name,public_id);
+      CREATE TABLE IF NOT EXISTS moxfield_deck_tags (
+        public_id TEXT NOT NULL REFERENCES moxfield_decks(public_id) ON DELETE CASCADE,
+        tag TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY(public_id,tag)
+      );
+      CREATE INDEX IF NOT EXISTS moxfield_deck_tags_tag ON moxfield_deck_tags(tag,public_id);
     `);
         if (path !== ":memory:")
             chmodSync(path, 0o600);
@@ -146,9 +150,13 @@ export class MoxfieldRegistry {
         if (!options.includeArchived)
             where.push("d.archived_at IS NULL");
         if (options.query) {
-            where.push("(lower(d.name) LIKE ? OR lower(d.format) LIKE ? OR lower(d.public_id) LIKE ?)");
+            where.push("(lower(d.name) LIKE ? OR lower(COALESCE(d.format,'')) LIKE ? OR lower(d.public_id) LIKE ?)");
             const query = `%${options.query.toLowerCase()}%`;
             values.push(query, query, query);
+        }
+        if (options.tag) {
+            where.push("EXISTS(SELECT 1 FROM moxfield_deck_tags filter_tags WHERE filter_tags.public_id=d.public_id AND filter_tags.tag=?)");
+            values.push(normalizeTag(options.tag));
         }
         const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
         return this.db.prepare(`
@@ -158,7 +166,7 @@ export class MoxfieldRegistry {
       ${clause}
       GROUP BY d.public_id
       ORDER BY d.archived_at IS NOT NULL,d.name COLLATE NOCASE
-    `).all(...values).map(mapDeckRow);
+    `).all(...values).map(row => ({ ...mapDeckRow(row), tags: this.tags(String(row.public_id)) }));
     }
     get(publicId) {
         const row = this.db.prepare("SELECT * FROM moxfield_decks WHERE public_id=?").get(publicId);
@@ -166,7 +174,8 @@ export class MoxfieldRegistry {
             throw new Error(`Unknown Moxfield deck: ${publicId}`);
         const cards = this.db.prepare(`
       SELECT board,name,quantity,scryfall_id,moxfield_card_id,set_code,collector_number
-      FROM moxfield_deck_cards WHERE public_id=? ORDER BY CASE board WHEN 'commanders' THEN 0 WHEN 'mainboard' THEN 1 WHEN 'sideboard' THEN 2 WHEN 'maybeboard' THEN 3 ELSE 4 END,position
+      FROM moxfield_deck_cards WHERE public_id=?
+      ORDER BY CASE board WHEN 'commanders' THEN 0 WHEN 'mainboard' THEN 1 WHEN 'sideboard' THEN 2 WHEN 'maybeboard' THEN 3 ELSE 4 END,position
     `).all(publicId).map(card => ({
             board: String(card.board),
             name: String(card.name),
@@ -187,6 +196,54 @@ export class MoxfieldRegistry {
             cards,
             visibility: row.visibility ? String(row.visibility) : undefined,
             archivedAt: row.archived_at ? String(row.archived_at) : undefined,
+            tags: this.tags(publicId),
+        };
+    }
+    setTags(publicId, tags, now = new Date().toISOString()) {
+        this.assertDeck(publicId);
+        const normalized = [...new Set(tags.map(normalizeTag))].sort();
+        this.db.exec("BEGIN IMMEDIATE");
+        try {
+            this.db.prepare("DELETE FROM moxfield_deck_tags WHERE public_id=?").run(publicId);
+            const insert = this.db.prepare("INSERT INTO moxfield_deck_tags(public_id,tag,created_at) VALUES(?,?,?)");
+            for (const tag of normalized)
+                insert.run(publicId, tag, now);
+            this.db.exec("COMMIT");
+        }
+        catch (error) {
+            this.db.exec("ROLLBACK");
+            throw error;
+        }
+        return { publicId, tags: normalized };
+    }
+    addTag(publicId, tag, now = new Date().toISOString()) {
+        this.assertDeck(publicId);
+        const normalized = normalizeTag(tag);
+        this.db.prepare("INSERT OR IGNORE INTO moxfield_deck_tags(public_id,tag,created_at) VALUES(?,?,?)").run(publicId, normalized, now);
+        return { publicId, tags: this.tags(publicId) };
+    }
+    removeTag(publicId, tag) {
+        this.assertDeck(publicId);
+        const normalized = normalizeTag(tag);
+        this.db.prepare("DELETE FROM moxfield_deck_tags WHERE public_id=? AND tag=?").run(publicId, normalized);
+        return { publicId, tags: this.tags(publicId) };
+    }
+    tags(publicId) {
+        return this.db.prepare("SELECT tag FROM moxfield_deck_tags WHERE public_id=? ORDER BY tag").all(publicId).map(row => String(row.tag));
+    }
+    tagSummary() {
+        return {
+            tags: this.db.prepare(`
+        SELECT t.tag,COUNT(*) AS deck_count
+        FROM moxfield_deck_tags t
+        JOIN moxfield_decks d ON d.public_id=t.public_id
+        WHERE d.archived_at IS NULL
+        GROUP BY t.tag ORDER BY t.tag
+      `).all().map(row => ({ tag: String(row.tag), deckCount: Number(row.deck_count) })),
+            untaggedActiveDecks: Number(this.db.prepare(`
+        SELECT COUNT(*) AS count FROM moxfield_decks d
+        WHERE d.archived_at IS NULL AND NOT EXISTS(SELECT 1 FROM moxfield_deck_tags t WHERE t.public_id=d.public_id)
+      `).get().count),
         };
     }
     account() {
@@ -216,8 +273,19 @@ export class MoxfieldRegistry {
             activeDecks: Number(counts.active ?? 0),
             archivedDecks: Number(counts.archived ?? 0),
             cachedDecks: Number(counts.cached ?? 0),
+            ...this.tagSummary(),
         };
     }
+    assertDeck(publicId) {
+        if (!this.db.prepare("SELECT 1 FROM moxfield_decks WHERE public_id=?").get(publicId))
+            throw new Error(`Unknown Moxfield deck: ${publicId}`);
+    }
+}
+function normalizeTag(value) {
+    const tag = value.trim().toLowerCase();
+    if (!/^[a-z0-9][a-z0-9:_-]{0,99}$/.test(tag))
+        throw new Error("Tags must be 1-100 lowercase letters, numbers, colons, underscores, or hyphens.");
+    return tag;
 }
 function mapDeckRow(row) {
     return {

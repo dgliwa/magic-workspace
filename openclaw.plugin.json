@@ -26,6 +26,10 @@
       "magic_moxfield_registry_list",
       "magic_moxfield_registry_get",
       "magic_moxfield_registry_refresh",
+      "magic_deck_tag_add",
+      "magic_deck_tag_remove",
+      "magic_deck_tags_set",
+      "magic_deck_tag_summary",
       "magic_deck_list",
       "magic_deck_get",
       "magic_moxfield_deck_fetch",
@@ -53,6 +57,15 @@
       "sideEffecting": true
     },
     "magic_scryfall_cache_refresh": {
+      "sideEffecting": true
+    },
+    "magic_deck_tag_add": {
+      "sideEffecting": true
+    },
+    "magic_deck_tag_remove": {
+      "sideEffecting": true
+    },
+    "magic_deck_tags_set": {
       "sideEffecting": true
     }
   }
