@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
-import { createReadStream, createWriteStream } from "node:fs";
+import { createReadStream, createWriteStream, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -15,6 +15,20 @@ function databasePath() {
     ? resolve(process.env.OPENCLAW_STATE_DIR)
     : resolve(homedir(), ".openclaw");
   return resolve(state, "plugins", "magic-workspace", "magic.sqlite");
+}
+
+function configuredCollection() {
+  const workspace = process.env.MAGIC_WORKSPACE_PATH
+    ? resolve(process.env.MAGIC_WORKSPACE_PATH)
+    : resolve(homedir(), "dev", "magic-decks");
+  try {
+    const config = JSON.parse(readFileSync(resolve(workspace, "collection/config/inventory.json"), "utf8"));
+    const collectionUrl = String(config.collection_url ?? "");
+    const match = collectionUrl.match(/^https:\/\/moxfield\.com\/collection\/([A-Za-z0-9_-]+)$/i);
+    return match ? { collectionPublicId: match[1], collectionUrl } : {};
+  } catch {
+    return {};
+  }
 }
 
 async function secretPrompt(question) {
@@ -33,17 +47,28 @@ async function secretPrompt(question) {
   }
 }
 
-let cookie = await secretPrompt("Paste the Moxfield Cookie request-header value: ");
+const bearerMode = process.argv.includes("--bearer");
+let credential = await secretPrompt(bearerMode
+  ? "Paste the short-lived Moxfield bearer access token: "
+  : "Paste the Moxfield Cookie request-header value: ");
 let registry;
 try {
-  const exchanged = await exchangeSessionCookie(cookie);
-  cookie = "";
-  let token = exchanged.token;
+  let token;
+  let account;
+  if (bearerMode) {
+    token = credential.trim();
+    account = configuredCollection();
+  } else {
+    const exchanged = await exchangeSessionCookie(credential);
+    token = exchanged.token;
+    account = exchanged.account;
+  }
+  credential = "";
   const decks = await discoverMoxfieldDecks(token);
   token = "";
 
   registry = new MoxfieldRegistry(databasePath());
-  const discovery = registry.importDiscovery(exchanged.account, decks);
+  const discovery = registry.importDiscovery(account, decks);
   const refreshed = [];
   const failed = [];
 
@@ -64,7 +89,7 @@ try {
 
   console.log(JSON.stringify({
     database: databasePath(),
-    account: exchanged.account,
+    account,
     discoveredDecks: decks.length,
     refreshedPublicSnapshots: refreshed.length,
     failedSnapshots: failed,
@@ -72,6 +97,6 @@ try {
     discovery,
   }, null, 2));
 } finally {
-  cookie = "";
+  credential = "";
   registry?.close();
 }

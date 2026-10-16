@@ -17,7 +17,13 @@ Account discovery is an explicit bootstrap operation run over SSH:
 npm run moxfield:import
 ```
 
-The command securely prompts for the `Cookie` request-header value from a logged-in Moxfield browser. Terminal echo is disabled. It exchanges the cookie for a short-lived bearer token, stores only account metadata and public deck/collection URLs, refreshes publicly readable deck snapshots, and discards both credentials. Run it again only when you need to discover newly created decks. Private or unlisted decks are recorded but may not refresh without another authenticated session.
+The command securely prompts for the `Cookie` request-header value from a logged-in Moxfield browser. Terminal echo is disabled. It exchanges the cookie for a short-lived bearer token, stores only account metadata and public deck/collection URLs, refreshes publicly readable deck snapshots, and discards both credentials. Because Cloudflare may bind browser cookies to a client, a 403 can be bypassed with the short-lived token returned by `startup/authenticated`:
+
+```bash
+npm run moxfield:import -- --bearer
+```
+
+Bearer mode retains the already configured public collection URL and likewise never stores the token. Run discovery again only when you need to find newly created decks. Private or unlisted decks are recorded but may not refresh without another authenticated session.
 
 ### Legacy filesystem decks
 
