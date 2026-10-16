@@ -38,7 +38,7 @@ export function getLocalDeck(root, key) { const local = listDecks(root).find(x =
         cards.push(...parseDeckText(readFileSync(path, "utf8"), board));
 } if (cards.length)
     cards[0] = { ...cards[0], board: "commanders" }; return { name: local.key, format: "commander", url: local.moxfieldUrl, cards, source: "local", local }; }
-function boardText(cards, boards) { return cards.filter(c => boards.includes(c.board)).sort((a, b) => a.name.localeCompare(b.name)).map(c => `${c.quantity} ${c.name}`).join("\n") + "\n"; }
+function boardText(cards, boards) { return boards.flatMap(board => cards.filter(card => card.board === board).sort((a, b) => a.name.localeCompare(b.name))).map(card => `${card.quantity} ${card.name}`).join("\n") + "\n"; }
 export function writeDeckSnapshot(root, key, snapshot) { const local = listDecks(root).find(x => x.key === key); if (!local)
     throw new Error(`Unknown local deck ${key}.`); atomic(join(root, local.deckFile), boardText(snapshot.cards, ["commanders", "mainboard"])); for (const [file, board] of [["sideboard.txt", "sideboard"], ["maybeboard.txt", "maybeboard"]]) {
     const selected = snapshot.cards.filter(c => c.board === board);
