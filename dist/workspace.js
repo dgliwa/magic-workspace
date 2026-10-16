@@ -1,0 +1,89 @@
+import { existsSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { join, relative } from "node:path";
+import { parse } from "csv-parse/sync";
+import { stringify } from "csv-stringify/sync";
+const normalize = (name) => name.trim().replace(/\s+\(.*?\)\s*$/, "");
+function atomic(path, content) { const tmp = `${path}.tmp-${process.pid}-${Date.now()}`; writeFileSync(tmp, content, { encoding: "utf8", mode: 0o600 }); renameSync(tmp, path); }
+export function parseDeckText(content, board = "mainboard") { const result = []; for (const raw of content.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#") || ["commander", "mainboard", "sideboard", "maybeboard"].includes(line.toLowerCase()))
+        continue;
+    const m = line.match(/^(\d+)\s+(.+)$/);
+    if (m)
+        result.push({ quantity: Number(m[1]), name: normalize(m[2]), board });
+} return result; }
+function readActive(root) { const path = join(root, "collection/config/active-decks.txt"); if (!existsSync(path))
+    return new Set(); return new Set(readFileSync(path, "utf8").split(/\r?\n/).map(x => x.trim()).filter(x => x && !x.startsWith("#")).map(x => x.replaceAll("\\", "/"))); }
+function moxfieldUrl(readme) { if (!readme)
+    return undefined; return readFileSync(readme, "utf8").match(/https:\/\/moxfield\.com\/decks\/[A-Za-z0-9_-]+/i)?.[0]; }
+export function listDecks(root) { const base = join(root, "commanders"), active = readActive(root), result = []; if (!existsSync(base))
+    return result; for (const entry of readdirSync(base, { withFileTypes: true })) {
+    if (!entry.isDirectory())
+        continue;
+    const directory = join(base, entry.name);
+    const files = readdirSync(directory);
+    for (const file of files.filter(x => x === "commander.txt" || x.endsWith("-commander.txt"))) {
+        const path = join(directory, file);
+        const cards = parseDeckText(readFileSync(path, "utf8"));
+        const rel = relative(root, path).replaceAll("\\", "/");
+        const readmeName = files.find(x => /^readme\.md$/i.test(x) && !x.toLowerCase().startsWith("budget")) ?? files.find(x => /readme\.md$/i.test(x));
+        const readme = readmeName ? join(directory, readmeName) : undefined;
+        result.push({ key: `${entry.name}/${file.replace(/\.txt$/, '')}`, directory: relative(root, directory), deckFile: rel, readmeFile: readme ? relative(root, readme) : undefined, moxfieldUrl: moxfieldUrl(readme), cardCount: cards.reduce((n, c) => n + c.quantity, 0), uniqueCards: cards.length, commander: cards[0]?.name, active: active.has(rel) });
+    }
+} return result.sort((a, b) => a.key.localeCompare(b.key)); }
+export function getLocalDeck(root, key) { const local = listDecks(root).find(x => x.key === key); if (!local)
+    throw new Error(`Unknown local deck ${key}.`); const cards = parseDeckText(readFileSync(join(root, local.deckFile), "utf8")); for (const [file, board] of [["sideboard.txt", "sideboard"], ["maybeboard.txt", "maybeboard"]]) {
+    const path = join(root, local.directory, file);
+    if (existsSync(path))
+        cards.push(...parseDeckText(readFileSync(path, "utf8"), board));
+} if (cards.length)
+    cards[0] = { ...cards[0], board: "commanders" }; return { name: local.key, format: "commander", url: local.moxfieldUrl, cards, source: "local", local }; }
+function boardText(cards, boards) { return cards.filter(c => boards.includes(c.board)).sort((a, b) => a.name.localeCompare(b.name)).map(c => `${c.quantity} ${c.name}`).join("\n") + "\n"; }
+export function writeDeckSnapshot(root, key, snapshot) { const local = listDecks(root).find(x => x.key === key); if (!local)
+    throw new Error(`Unknown local deck ${key}.`); atomic(join(root, local.deckFile), boardText(snapshot.cards, ["commanders", "mainboard"])); for (const [file, board] of [["sideboard.txt", "sideboard"], ["maybeboard.txt", "maybeboard"]]) {
+    const selected = snapshot.cards.filter(c => c.board === board);
+    if (selected.length)
+        atomic(join(root, local.directory, file), boardText(selected, [board]));
+} return getLocalDeck(root, key); }
+export function diffDecks(local, remote) { const counts = (deck) => { const map = new Map(); for (const c of deck.cards) {
+    const key = c.name.toLowerCase();
+    const old = map.get(key) ?? { quantity: 0, boards: new Set() };
+    old.quantity += c.quantity;
+    old.boards.add(c.board);
+    map.set(key, old);
+} return map; }; const a = counts(local), b = counts(remote), names = [...new Set([...a.keys(), ...b.keys()])].sort(); return names.map(name => ({ name: remote.cards.find(c => c.name.toLowerCase() === name)?.name ?? local.cards.find(c => c.name.toLowerCase() === name).name, local: a.get(name)?.quantity ?? 0, moxfield: b.get(name)?.quantity ?? 0 })).filter(x => x.local !== x.moxfield); }
+function collectionPath(root) { const config = JSON.parse(readFileSync(join(root, "collection/config/inventory.json"), "utf8")); return { url: String(config.collection_url), path: join(root, String(config.local_collection_csv)), active: join(root, String(config.active_decks_file)) }; }
+export function configuredCollection(root) { return collectionPath(root); }
+export function writeCollection(root, entries) { const { path } = collectionPath(root); const records = entries.map(e => ({ Count: e.count, "Tradelist Count": e.tradelistCount, Name: e.name, Edition: e.edition ?? "", Condition: e.condition ?? "", Language: e.language ?? "English", Foil: e.foil ? "foil" : "", Tags: "", "Last Modified": "", "Collector Number": e.collectorNumber ?? "", Alter: "False", Proxy: "False", "Purchase Price": e.purchasePrice ?? "" })); atomic(path, stringify(records, { header: true })); exportSummaries(root); return collectionSummary(root); }
+export function readCollection(root) { const { path } = collectionPath(root); const records = parse(readFileSync(path, "utf-8"), { columns: true, bom: true, skip_empty_lines: true }); return records.map(r => ({ name: normalize(r.Name ?? ""), count: Number(r.Count ?? 0), tradelistCount: Number(r["Tradelist Count"] ?? 0), edition: r.Edition || undefined, condition: r.Condition || undefined, language: r.Language || undefined, foil: Boolean(r.Foil), collectorNumber: r["Collector Number"] || undefined, purchasePrice: r["Purchase Price"] ? Number(r["Purchase Price"]) : undefined })).filter(x => x.name && x.count > 0); }
+function aggregate(entries) { const map = new Map(); for (const e of entries)
+    map.set(e.name, (map.get(e.name) ?? 0) + e.count); return map; }
+function reserved(root) { const map = new Map(), by = new Map(); for (const deck of listDecks(root).filter(x => x.active)) {
+    const cards = parseDeckText(readFileSync(join(root, deck.deckFile), "utf8"));
+    const dm = new Map();
+    for (const c of cards) {
+        map.set(c.name, (map.get(c.name) ?? 0) + c.quantity);
+        dm.set(c.name, (dm.get(c.name) ?? 0) + c.quantity);
+    }
+    by.set(deck.deckFile, dm);
+} return { map, by }; }
+export function cardAvailability(root, name) { const exact = normalize(name), owned = aggregate(readCollection(root)), r = reserved(root); const canonical = [...owned.keys(), ...r.map.keys()].find(x => x.toLowerCase() === exact.toLowerCase()) ?? exact; const ownedCount = owned.get(canonical) ?? 0, reservedCount = r.map.get(canonical) ?? 0; return { name: canonical, owned: ownedCount, reserved: reservedCount, available: Math.max(0, ownedCount - reservedCount), reservedBy: [...r.by].filter(([, m]) => m.has(canonical)).map(([deck, m]) => ({ deck, quantity: m.get(canonical) })) }; }
+export function searchCollection(root, query, limit = 50) { const q = query.toLowerCase(); const grouped = new Map(); for (const e of readCollection(root).filter(e => e.name.toLowerCase().includes(q))) {
+    const x = grouped.get(e.name) ?? { count: 0, editions: new Set(), foil: 0 };
+    x.count += e.count;
+    if (e.edition)
+        x.editions.add(e.edition);
+    if (e.foil)
+        x.foil += e.count;
+    grouped.set(e.name, x);
+} return [...grouped].map(([name, x]) => ({ name, count: x.count, foil: x.foil, editions: [...x.editions].sort(), availability: cardAvailability(root, name) })).sort((a, b) => a.name.localeCompare(b.name)).slice(0, limit); }
+export function collectionSummary(root) { const entries = readCollection(root), owned = aggregate(entries), r = reserved(root); let reservedTotal = 0, available = 0; for (const [name, count] of owned) {
+    const used = Math.min(count, r.map.get(name) ?? 0);
+    reservedTotal += used;
+    available += count - used;
+} return { rows: entries.length, totalCards: entries.reduce((n, e) => n + e.count, 0), uniqueNames: owned.size, reservedCards: reservedTotal, availableCards: available, activeDecks: listDecks(root).filter(x => x.active).length, lastModified: statSync(collectionPath(root).path).mtime.toISOString() }; }
+export function exportSummaries(root) { const owned = aggregate(readCollection(root)), r = reserved(root); const write = (file, map) => atomic(join(root, "collection/data", file), stringify([...map].sort(([a], [b]) => a.localeCompare(b)).map(([Name, Count]) => ({ Name, Count })), { header: true })); write("collection-summary.csv", owned); write("reserved-summary.csv", r.map); const available = new Map(); for (const [name, count] of owned) {
+    const left = count - (r.map.get(name) ?? 0);
+    if (left > 0)
+        available.set(name, left);
+} write("available-summary.csv", available); }

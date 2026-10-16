@@ -1,0 +1,52 @@
+{
+  "id": "magic-workspace",
+  "name": "Magic Workspace",
+  "description": "Use Moxfield-backed deck and collection caches plus Scryfall card data for Magic: The Gathering deckbuilding and future simulation.",
+  "version": "0.1.0",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "workspacePath": {
+        "type": "string",
+        "description": "Path to the magic-decks cache workspace. Defaults to ~/dev/magic-decks."
+      },
+      "cachePath": {
+        "type": "string",
+        "description": "SQLite Scryfall cache path."
+      }
+    },
+    "additionalProperties": false
+  },
+  "activation": {
+    "onStartup": true
+  },
+  "contracts": {
+    "tools": [
+      "magic_deck_list",
+      "magic_deck_get",
+      "magic_moxfield_deck_fetch",
+      "magic_deck_diff",
+      "magic_deck_sync",
+      "magic_collection_sync",
+      "magic_collection_search",
+      "magic_collection_card",
+      "magic_collection_summary",
+      "magic_scryfall_card",
+      "magic_scryfall_search",
+      "magic_scryfall_rulings",
+      "magic_scryfall_cache_status",
+      "magic_scryfall_cache_refresh"
+    ]
+  },
+  "toolMetadata": {
+    "magic_deck_sync": {
+      "sideEffecting": true
+    },
+    "magic_collection_sync": {
+      "sideEffecting": true
+    },
+    "magic_scryfall_cache_refresh": {
+      "sideEffecting": true
+    }
+  }
+}
