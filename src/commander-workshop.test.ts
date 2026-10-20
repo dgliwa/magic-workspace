@@ -52,7 +52,7 @@ describe("Commander Workshop", () => {
     const search = commanderWorkshopTools(tool).find((toolDefinition: any) => toolDefinition.name === "magic_commander_theme_search");
     const result = await search.execute({
       confirmed: true,
-      commanderName: "Test Commander",
+      commanderNames: ["Test Commander"],
       theme: "Cast spells to produce an unusual army of tokens.",
       searches: [
         { role: "enablers", query: "o:\"cast a spell\"" },
@@ -70,7 +70,8 @@ describe("Commander Workshop", () => {
     }
     expect(result).toMatchObject({
       responseChannel: "channel:1560498017394499706",
-      commander: { name: "Test Commander" },
+      commanders: [{ name: "Test Commander" }],
+      combinedColorIdentity: ["R", "U"],
       theme: "Cast spells to produce an unusual army of tokens.",
       candidates: [{ name: "Theme Payoff", eligibleBudgetTiers: ["budget", "established", "premium-casual"] }],
     });
