@@ -83,5 +83,24 @@ else if (input.name)
     url = `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(input.name)}`;
 else
     throw new Error("Provide name, id, or set plus collectorNumber."); return getJson(url, signal); }
-export async function searchScryfall(query, limit = 25, signal) { const payload = await getJson(`https://api.scryfall.com/cards/search?q=${encodeURIComponent(query)}&unique=cards&order=name`, signal); return { totalCards: Number(payload.total_cards ?? 0), cards: (payload.data ?? []).slice(0, limit), hasMore: Boolean(payload.has_more) }; }
+export async function searchScryfall(query, limit = 25, signal) { return searchScryfallAdvanced(query, { limit, unique: "cards", order: "name", direction: "asc" }, signal); }
+export async function fetchRandomScryfallCommander(signal) { return getJson("https://api.scryfall.com/cards/random?q=is%3Acommander", signal); }
+export async function searchScryfallAdvanced(query, options = {}, signal) { const params = new URLSearchParams({ q: query, unique: options.unique ?? "cards", order: options.order ?? "name", dir: options.direction ?? "auto" }); const payload = await getJson(`https://api.scryfall.com/cards/search?${params.toString()}`, signal); return { totalCards: Number(payload.total_cards ?? 0), cards: (payload.data ?? []).slice(0, options.limit ?? 25), hasMore: Boolean(payload.has_more) }; }
+export async function fetchScryfallCollection(names, signal) { const cards = []; const notFound = []; for (let offset = 0; offset < names.length; offset += 75) {
+    if (offset > 0)
+        await new Promise(resolve => setTimeout(resolve, 100));
+    const identifiers = names.slice(offset, offset + 75).map(name => ({ name }));
+    const response = await fetch("https://api.scryfall.com/cards/collection", { method: "POST", headers: { "User-Agent": UA, Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify({ identifiers }), signal, redirect: "error" });
+    if (!response.ok) {
+        let detail = "";
+        try {
+            detail = String((await response.json()).details ?? "");
+        }
+        catch { }
+        throw new Error(`Scryfall collection request failed with HTTP ${response.status}${detail ? `: ${detail}` : ""}.`);
+    }
+    const payload = await response.json();
+    cards.push(...(payload.data ?? []));
+    notFound.push(...(payload.not_found ?? []));
+} return { cards, notFound }; }
 export async function fetchScryfallRulings(id, signal) { const payload = await getJson(`https://api.scryfall.com/cards/${encodeURIComponent(id)}/rulings`, signal); return payload.data ?? []; }

@@ -46,6 +46,14 @@ Bearer mode retains the already configured public collection URL and likewise ne
 - `magic_collection_card`
 - `magic_collection_summary`
 
+### Commander Workshop
+
+- `magic_commander_random` — request a random legal commander from Scryfall using exactly `is:commander`, then develop three theme pitches before searching for cards
+- `magic_commander_theme_search` — after theme confirmation, run role-specific advanced searches constrained by Commander legality and color identity and ordered by Scryfall EDHREC rank
+- `magic_commander_deck_validate` — validate each proposed price tier for 100-card size, legality, color identity, singleton rules, land count, and indicative Scryfall pricing
+
+Commander Workshop defaults user-facing results to the `#magic` Discord channel. Its standard price ladder is $50 budget, $125 established, and $250 premium-casual, with configurable per-card ceilings. Scryfall's EDHREC order is treated as global Commander popularity rather than commander-specific synergy; thematic relevance comes from the advanced query and deck analysis.
+
 ### Scryfall
 
 - `magic_scryfall_card` — exact card retrieval with cache-first or live modes
@@ -65,7 +73,8 @@ Magic Workspace uses authentication only for explicit account discovery. It does
 ```json
 {
   "workspacePath": "~/dev/magic-decks",
-  "cachePath": "plugins/magic-workspace/magic.sqlite"
+  "cachePath": "plugins/magic-workspace/magic.sqlite",
+  "commanderWorkshopDiscordTarget": "channel:1560498017394499706"
 }
 ```
 
