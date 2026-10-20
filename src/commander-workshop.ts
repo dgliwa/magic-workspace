@@ -12,7 +12,7 @@ interface BudgetTier {
 
 interface ThemeSearchInput {
   confirmed: true;
-  commanderName: string;
+  commanderNames: string[];
   theme: string;
   searches: Array<{ role: string; query: string }>;
   budgetTiers?: BudgetTier[];
@@ -80,10 +80,15 @@ function validateCommander(card: any): void {
 }
 
 async function searchTheme(input: ThemeSearchInput, signal?: AbortSignal) {
-  const commander = await fetchScryfallCard({ name: input.commanderName }, signal);
-  validateCommander(commander);
+  const commanders: any[] = [];
+  for (const [index, name] of input.commanderNames.entries()) {
+    if (index > 0) await delay(100, signal);
+    const commander = await fetchScryfallCard({ name }, signal);
+    validateCommander(commander);
+    commanders.push(commander);
+  }
   const tiers = normalizeBudgetTiers(input.budgetTiers);
-  const identity = Array.isArray(commander.color_identity) ? commander.color_identity.map(String) : [];
+  const identity = [...new Set(commanders.flatMap((commander) => Array.isArray(commander.color_identity) ? commander.color_identity.map(String) : []))];
   const legality = `legal:commander ${colorIdentityClause(identity)}`;
   const resultsPerSearch = input.resultsPerSearch ?? 25;
   const buckets: Array<Record<string, unknown>> = [];
@@ -99,7 +104,8 @@ async function searchTheme(input: ThemeSearchInput, signal?: AbortSignal) {
       unique: "cards",
       direction: "asc",
     }, signal);
-    const cards = result.cards.map((card: any) => compact(card)).filter((card: ReturnType<typeof compact>) => card.name !== commander.name);
+    const commanderNames = new Set(commanders.map((commander) => commander.name));
+    const cards = result.cards.map((card: any) => compact(card)).filter((card: ReturnType<typeof compact>) => !commanderNames.has(card.name));
     for (const card of cards) allCards.set(card.oracleId ?? card.id, card);
     buckets.push({
       role: search.role,
@@ -119,7 +125,8 @@ async function searchTheme(input: ThemeSearchInput, signal?: AbortSignal) {
   }));
 
   return {
-    commander: compact(commander),
+    commanders: commanders.map(compact),
+    combinedColorIdentity: identity.sort(),
     theme: input.theme,
     budgetTiers: tiers,
     searchPolicy: {
@@ -219,7 +226,7 @@ export function commanderWorkshopTools(tool: any) {
   return [
     tool({
       name: "magic_commander_random",
-      description: "Start Commander Workshop by requesting one random card from Scryfall with exactly `is:commander`. Present the result in the configured #magic channel, then use its rules text and color identity to propose three mechanically defensible concepts: natural synergy, flavor-forward, and offbeat. Include each concept's engine, win plan, weaknesses, and budget pressure. Do not search for deck cards until the user confirms or revises a concept.",
+      description: "Start Commander Workshop by requesting one random card from Scryfall with exactly `is:commander`. Present the result in the configured #magic channel, then use its rules text and color identity to propose three mechanically defensible concepts: natural synergy, flavor-forward, and offbeat. Include each concept's engine, win plan, weaknesses, and budget pressure. If the result uses Partner, Friends forever, Doctor's companion, Choose a Background, or is a Background, identify the need for a legal paired commander. Do not search for deck cards until the user confirms or revises a concept.",
       parameters: Type.Object({}, { additionalProperties: false }),
       execute: async (_input: Record<string, never>, config: Record<string, unknown>, { signal }: any) => {
         signal?.throwIfAborted();
@@ -235,10 +242,10 @@ export function commanderWorkshopTools(tool: any) {
     }),
     tool({
       name: "magic_commander_theme_search",
-      description: "After the user confirms or revises a Commander Workshop concept, run several role-specific Scryfall advanced searches constrained to Commander legality and the commander's color identity, ordered by Scryfall EDHREC rank. Use general Magic knowledge to author precise oracle, type, keyword, and price queries. Then propose the confirmed theme at multiple price points in the configured #magic channel. EDHREC ordering is a popularity aid, not commander-specific synergy evidence.",
+      description: "After the user confirms or revises a Commander Workshop concept, run several role-specific Scryfall advanced searches constrained to Commander legality and the combined commander color identity, ordered by Scryfall EDHREC rank. Use general Magic knowledge to author precise oracle, type, keyword, and price queries. Then propose the confirmed theme at multiple price points in the configured #magic channel. EDHREC ordering is a popularity aid, not commander-specific synergy evidence.",
       parameters: Type.Object({
         confirmed: Type.Literal(true),
-        commanderName: Type.String({ minLength: 1, maxLength: 500 }),
+        commanderNames: Type.Array(Type.String({ minLength: 1, maxLength: 500 }), { minItems: 1, maxItems: 2, description: "One commander, or both cards for a legal partner/background pairing." }),
         theme: Type.String({ minLength: 10, maxLength: 2_000 }),
         searches: Type.Array(Type.Object({
           role: Type.String({ minLength: 1, maxLength: 120, description: "Candidate role such as enabler, payoff, draw, interaction, protection, recursion, win condition, or mana." }),
