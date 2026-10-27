@@ -122,7 +122,7 @@ async function searchTheme(input, signal) {
         ],
     };
 }
-async function validateDeck(commanders, mainboard, signal) {
+export async function validateCommanderDeck(commanders, mainboard, signal) {
     const requested = [...commanders, ...mainboard.map((card) => card.name)];
     const names = [...new Set(requested.map((name) => name.trim()).filter(Boolean))];
     const resolved = await fetchScryfallCollection(names, signal);
@@ -257,7 +257,7 @@ export function commanderWorkshopTools(tool) {
                 signal?.throwIfAborted();
                 return {
                     responseChannel: responseChannel(config),
-                    ...(await validateDeck(commanders, mainboard, signal)),
+                    ...(await validateCommanderDeck(commanders, mainboard, signal)),
                 };
             },
         }),

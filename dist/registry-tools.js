@@ -1,9 +1,14 @@
 import { Type } from "typebox";
+import { validateCommanderDeck } from "./commander-workshop.js";
 import { fetchMoxfieldDeck } from "./moxfield.js";
 import { MoxfieldRegistry } from "./moxfield-registry.js";
 import { resolveCachePath } from "./paths.js";
 const publicIdSchema = Type.String({ pattern: "^[A-Za-z0-9_-]+$", maxLength: 200 });
 const tagSchema = Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9:_-]{0,99}$", maxLength: 100 });
+const deckCardSchema = Type.Object({
+    name: Type.String({ minLength: 1, maxLength: 500 }),
+    quantity: Type.Integer({ minimum: 1, maximum: 100 }),
+}, { additionalProperties: false });
 function withRegistry(api, configuredPath, operation) {
     const stateDir = api.runtime.state.resolveStateDir(process.env);
     const registry = new MoxfieldRegistry(resolveCachePath(stateDir, configuredPath));
@@ -55,9 +60,9 @@ export function registryTools(tool) {
                 const stateDir = api.runtime.state.resolveStateDir(process.env);
                 const registry = new MoxfieldRegistry(resolveCachePath(stateDir, config.cachePath));
                 try {
-                    const decks = publicId
+                    const decks = (publicId
                         ? [registry.list({ includeArchived: true }).find(deck => deck.publicId === publicId)].filter(Boolean)
-                        : registry.list();
+                        : registry.list()).filter((deck) => deck.origin === "moxfield");
                     if (!decks.length)
                         throw new Error(publicId ? `Unknown Moxfield deck: ${publicId}` : "No active Moxfield decks have been discovered.");
                     const refreshed = [];
@@ -78,6 +83,34 @@ export function registryTools(tool) {
                 finally {
                     registry.close();
                 }
+            },
+        }),
+        tool({
+            name: "magic_generated_deck_save",
+            description: "Validate and store one generated Commander deck beside cached decks. Generated decks are always tagged built, generated, and not-owned so they can be simulated without being mistaken for a real owned deck.",
+            parameters: Type.Object({
+                confirmed: Type.Literal(true),
+                name: Type.String({ minLength: 1, maxLength: 300 }),
+                commanders: Type.Array(Type.String({ minLength: 1, maxLength: 500 }), { minItems: 1, maxItems: 2 }),
+                mainboard: Type.Array(deckCardSchema, { minItems: 1, maxItems: 100 }),
+                seasonKey: Type.Optional(Type.String({ minLength: 1, maxLength: 100 })),
+            }, { additionalProperties: false }),
+            execute: async (input, config, { api, signal }) => {
+                signal?.throwIfAborted();
+                const validation = await validateCommanderDeck(input.commanders, input.mainboard, signal);
+                if (!validation.valid)
+                    return { saved: false, validation };
+                const deck = withRegistry(api, config.cachePath, registry => registry.saveGeneratedDeck(input));
+                return { saved: true, validation, deck };
+            },
+        }),
+        tool({
+            name: "magic_generated_deck_archive",
+            description: "Archive one generated not-owned deck without affecting any Moxfield deck. Requires explicit confirmation.",
+            parameters: Type.Object({ publicId: publicIdSchema, confirmed: Type.Literal(true) }, { additionalProperties: false }),
+            execute: async ({ publicId }, config, { api, signal }) => {
+                signal?.throwIfAborted();
+                return withRegistry(api, config.cachePath, registry => registry.archiveGeneratedDeck(publicId));
             },
         }),
         tool({

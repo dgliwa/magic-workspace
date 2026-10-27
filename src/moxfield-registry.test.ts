@@ -50,6 +50,36 @@ describe("MoxfieldRegistry", () => {
     }
   });
 
+  it("stores generated decks as playable but explicitly not owned", () => {
+    const registry = new MoxfieldRegistry(":memory:");
+    try {
+      const generated = registry.saveGeneratedDeck({
+        name: "Season Villain",
+        commanders: ["Villain Commander"],
+        mainboard: [{ name: "Wastes", quantity: 99 }],
+        seasonKey: "2026-W44",
+      }, "2026-01-01T00:00:00.000Z");
+
+      expect(generated).toMatchObject({
+        name: "Season Villain",
+        source: "generated",
+        url: expect.stringMatching(/^generated:\/\/gen_/),
+        tags: ["built", "generated", "not-owned", "season:2026-w44"],
+      });
+      expect(generated.cards).toHaveLength(2);
+      expect(registry.status()).toMatchObject({ generatedDecks: 1, activeDecks: 1 });
+
+      registry.importDiscovery({ userName: "tester" }, [], "2026-02-01T00:00:00.000Z");
+      expect(registry.get(generated.publicId!)).toMatchObject({ archivedAt: undefined, source: "generated" });
+      expect(registry.archiveGeneratedDeck(generated.publicId!, "2026-03-01T00:00:00.000Z")).toEqual({
+        publicId: generated.publicId,
+        archivedAt: "2026-03-01T00:00:00.000Z",
+      });
+    } finally {
+      registry.close();
+    }
+  });
+
   it("rejects invalid tags and unknown decks", () => {
     const registry = new MoxfieldRegistry(":memory:");
     try {

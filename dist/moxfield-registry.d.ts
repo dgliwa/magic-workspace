@@ -33,6 +33,24 @@ export declare class MoxfieldRegistry {
         activeDecks: number;
         archivedDecks: number;
         cachedDecks: number;
+        generatedDecks: number;
+    };
+    saveGeneratedDeck(input: {
+        name: string;
+        commanders: string[];
+        mainboard: Array<{
+            name: string;
+            quantity: number;
+        }>;
+        seasonKey?: string;
+    }, now?: string): DeckSnapshot & {
+        visibility?: string;
+        archivedAt?: string;
+        tags: string[];
+    };
+    archiveGeneratedDeck(publicId: string, now?: string): {
+        publicId: string;
+        archivedAt: string;
     };
     saveSnapshot(snapshot: DeckSnapshot, now?: string): void;
     list(options?: {
@@ -50,6 +68,7 @@ export declare class MoxfieldRegistry {
         remoteUpdatedAt: string | undefined;
         snapshotRefreshedAt: string | undefined;
         archivedAt: string | undefined;
+        origin: string;
         cardCount: number;
         uniqueCards: number;
     }[];
@@ -95,6 +114,7 @@ export declare class MoxfieldRegistry {
         activeDecks: number;
         archivedDecks: number;
         cachedDecks: number;
+        generatedDecks: number;
     };
     private assertDeck;
 }

@@ -146,7 +146,7 @@ async function searchTheme(input: ThemeSearchInput, signal?: AbortSignal) {
   };
 }
 
-async function validateDeck(
+export async function validateCommanderDeck(
   commanders: string[],
   mainboard: Array<{ name: string; quantity: number }>,
   signal?: AbortSignal,
@@ -276,7 +276,7 @@ export function commanderWorkshopTools(tool: any) {
         signal?.throwIfAborted();
         return {
           responseChannel: responseChannel(config),
-          ...(await validateDeck(commanders, mainboard, signal)),
+          ...(await validateCommanderDeck(commanders, mainboard, signal)),
         };
       },
     }),
