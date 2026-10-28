@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { chmodSync, existsSync, lstatSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -35,7 +36,8 @@ export class MoxfieldRegistry {
         first_discovered_at TEXT NOT NULL,
         last_seen_at TEXT NOT NULL,
         archived_at TEXT,
-        snapshot_refreshed_at TEXT
+        snapshot_refreshed_at TEXT,
+        deck_origin TEXT NOT NULL DEFAULT 'moxfield' CHECK(deck_origin IN ('moxfield','generated'))
       );
       CREATE INDEX IF NOT EXISTS moxfield_decks_active ON moxfield_decks(archived_at,name);
       CREATE TABLE IF NOT EXISTS moxfield_deck_cards (
@@ -59,6 +61,10 @@ export class MoxfieldRegistry {
       );
       CREATE INDEX IF NOT EXISTS moxfield_deck_tags_tag ON moxfield_deck_tags(tag,public_id);
     `);
+        const deckColumns = this.db.prepare("PRAGMA table_info(moxfield_decks)").all();
+        if (!deckColumns.some(column => column.name === "deck_origin")) {
+            this.db.exec("ALTER TABLE moxfield_decks ADD COLUMN deck_origin TEXT NOT NULL DEFAULT 'moxfield'");
+        }
         if (path !== ":memory:")
             chmodSync(path, 0o600);
     }
@@ -86,12 +92,12 @@ export class MoxfieldRegistry {
           collection_url=excluded.collection_url,
           discovered_at=excluded.discovered_at
       `).run(account.userName ?? null, account.userId ?? null, account.collectionPublicId ?? null, account.collectionUrl ?? null, now);
-            this.db.prepare("UPDATE moxfield_decks SET archived_at=? WHERE archived_at IS NULL").run(now);
+            this.db.prepare("UPDATE moxfield_decks SET archived_at=? WHERE archived_at IS NULL AND deck_origin='moxfield'").run(now);
             const upsert = this.db.prepare(`
         INSERT INTO moxfield_decks(
           public_id,internal_id,name,format,visibility,public_url,remote_updated_at,
-          first_discovered_at,last_seen_at,archived_at
-        ) VALUES(?,?,?,?,?,?,?,?,?,NULL)
+          first_discovered_at,last_seen_at,archived_at,deck_origin
+        ) VALUES(?,?,?,?,?,?,?,?,?,NULL,'moxfield')
         ON CONFLICT(public_id) DO UPDATE SET
           internal_id=excluded.internal_id,
           name=excluded.name,
@@ -112,6 +118,46 @@ export class MoxfieldRegistry {
             throw error;
         }
         return this.status();
+    }
+    saveGeneratedDeck(input, now = new Date().toISOString()) {
+        const publicId = `gen_${randomUUID().replaceAll("-", "")}`;
+        const name = input.name.trim();
+        if (!name)
+            throw new Error("Generated deck name is required.");
+        const cards = [
+            ...input.commanders.map((cardName) => ({ name: cardName.trim(), quantity: 1, board: "commanders" })),
+            ...input.mainboard.map((card) => ({ name: card.name.trim(), quantity: card.quantity, board: "mainboard" })),
+        ];
+        const tags = ["built", "generated", "not-owned", ...(input.seasonKey ? [`season:${normalizeTagPart(input.seasonKey)}`] : [])];
+        this.db.exec("BEGIN IMMEDIATE");
+        try {
+            this.db.prepare(`
+        INSERT INTO moxfield_decks(
+          public_id,name,format,visibility,public_url,first_discovered_at,last_seen_at,
+          snapshot_refreshed_at,deck_origin
+        ) VALUES(?,?,'commander','local',?,?,?,?,'generated')
+      `).run(publicId, name, `generated://${publicId}`, now, now, now);
+            const insertCard = this.db.prepare(`
+        INSERT INTO moxfield_deck_cards(public_id,board,position,name,quantity)
+        VALUES(?,?,?,?,?)
+      `);
+            cards.forEach((card, position) => insertCard.run(publicId, card.board, position, card.name, card.quantity));
+            const insertTag = this.db.prepare("INSERT INTO moxfield_deck_tags(public_id,tag,created_at) VALUES(?,?,?)");
+            for (const tag of tags)
+                insertTag.run(publicId, tag, now);
+            this.db.exec("COMMIT");
+        }
+        catch (error) {
+            this.db.exec("ROLLBACK");
+            throw error;
+        }
+        return this.get(publicId);
+    }
+    archiveGeneratedDeck(publicId, now = new Date().toISOString()) {
+        const result = this.db.prepare("UPDATE moxfield_decks SET archived_at=?,last_seen_at=? WHERE public_id=? AND deck_origin='generated' AND archived_at IS NULL").run(now, now, publicId);
+        if (!result.changes)
+            throw new Error(`Unknown active generated deck: ${publicId}`);
+        return { publicId, archivedAt: now };
     }
     saveSnapshot(snapshot, now = new Date().toISOString()) {
         if (!snapshot.publicId)
@@ -192,7 +238,7 @@ export class MoxfieldRegistry {
             format: row.format ? String(row.format) : undefined,
             url: String(row.public_url),
             updatedAt: row.remote_updated_at ? String(row.remote_updated_at) : undefined,
-            source: "moxfield",
+            source: String(row.deck_origin ?? "moxfield"),
             cards,
             visibility: row.visibility ? String(row.visibility) : undefined,
             archivedAt: row.archived_at ? String(row.archived_at) : undefined,
@@ -263,7 +309,8 @@ export class MoxfieldRegistry {
       SELECT COUNT(*) AS total,
         SUM(CASE WHEN archived_at IS NULL THEN 1 ELSE 0 END) AS active,
         SUM(CASE WHEN archived_at IS NOT NULL THEN 1 ELSE 0 END) AS archived,
-        SUM(CASE WHEN snapshot_refreshed_at IS NOT NULL THEN 1 ELSE 0 END) AS cached
+        SUM(CASE WHEN snapshot_refreshed_at IS NOT NULL THEN 1 ELSE 0 END) AS cached,
+        SUM(CASE WHEN deck_origin='generated' AND archived_at IS NULL THEN 1 ELSE 0 END) AS generated
       FROM moxfield_decks
     `).get();
         return {
@@ -273,6 +320,7 @@ export class MoxfieldRegistry {
             activeDecks: Number(counts.active ?? 0),
             archivedDecks: Number(counts.archived ?? 0),
             cachedDecks: Number(counts.cached ?? 0),
+            generatedDecks: Number(counts.generated ?? 0),
             ...this.tagSummary(),
         };
     }
@@ -280,6 +328,12 @@ export class MoxfieldRegistry {
         if (!this.db.prepare("SELECT 1 FROM moxfield_decks WHERE public_id=?").get(publicId))
             throw new Error(`Unknown Moxfield deck: ${publicId}`);
     }
+}
+function normalizeTagPart(value) {
+    const part = value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 90);
+    if (!part)
+        throw new Error("seasonKey must contain letters or numbers.");
+    return part;
 }
 function normalizeTag(value) {
     const tag = value.trim().toLowerCase();
@@ -298,6 +352,7 @@ function mapDeckRow(row) {
         remoteUpdatedAt: row.remote_updated_at ? String(row.remote_updated_at) : undefined,
         snapshotRefreshedAt: row.snapshot_refreshed_at ? String(row.snapshot_refreshed_at) : undefined,
         archivedAt: row.archived_at ? String(row.archived_at) : undefined,
+        origin: String(row.deck_origin ?? "moxfield"),
         cardCount: Number(row.card_count ?? 0),
         uniqueCards: Number(row.unique_cards ?? 0),
     };

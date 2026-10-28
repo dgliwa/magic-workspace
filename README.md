@@ -10,12 +10,16 @@ An OpenClaw plugin that treats Moxfield as the source of truth, `~/dev/magic-dec
 - `magic_moxfield_registry_list` — list discovered account decks; missing remote decks are archived
 - `magic_moxfield_registry_get` — read a normalized SQLite deck snapshot
 - `magic_moxfield_registry_refresh` — confirmation-gated refresh from stored public URLs
+- `magic_generated_deck_save` — validate and store a synthetic Commander deck in the same registry with mandatory `built`, `generated`, and `not-owned` tags
+- `magic_generated_deck_archive` — archive a generated deck without touching Moxfield decks
 - `magic_deck_tag_add` — add normalized local metadata such as `built`, `precon`, or `testing`
 - `magic_deck_tag_remove` — remove one local tag
 - `magic_deck_tags_set` — replace all local tags for one deck
 - `magic_deck_tag_summary` — summarize tag usage and untagged active decks
 
 Registry listing accepts an exact `tag` filter. Tags are durable local metadata and are preserved when deck snapshots are refreshed or when missing remote decks are archived. They never modify Moxfield.
+
+Generated decks live beside Moxfield snapshots in the registry so Forge can consume them, but use `generated://` URLs and mandatory `generated` plus `not-owned` provenance tags. Moxfield discovery never archives or overwrites these local synthetic decks.
 
 Account discovery is an explicit bootstrap operation run over SSH:
 

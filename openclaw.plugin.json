@@ -32,6 +32,8 @@
       "magic_moxfield_registry_list",
       "magic_moxfield_registry_get",
       "magic_moxfield_registry_refresh",
+      "magic_generated_deck_save",
+      "magic_generated_deck_archive",
       "magic_deck_tag_add",
       "magic_deck_tag_remove",
       "magic_deck_tags_set",

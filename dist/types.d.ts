@@ -17,7 +17,7 @@ export interface DeckSnapshot {
     url?: string;
     updatedAt?: string;
     cards: DeckCard[];
-    source: "local" | "moxfield";
+    source: "local" | "moxfield" | "generated";
 }
 export interface LocalDeck {
     key: string;
