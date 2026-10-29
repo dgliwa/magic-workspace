@@ -68,6 +68,18 @@ Commander Workshop defaults user-facing results to the `#magic` Discord channel.
 
 The Scryfall cache uses the official daily `oracle_cards` bulk dataset and stores normalized searchable records plus original JSON in owner-only SQLite storage.
 
+### Magic proxy library
+
+Magic Workspace owns private source records for alternate-art proxies. `magic_proxy_create` accepts a staged JPEG, PNG, or WebP upload, resolves the exact card through Scryfall, rotates and re-encodes the artwork to managed WebP, strips metadata, and records dimensions plus SHA-256. Storing a proxy never nominates or publishes it.
+
+Tools: `magic_proxy_create`, `magic_proxy_get`, `magic_proxy_list`, `magic_proxy_update`, and `magic_proxy_archive`.
+
+Records default to `~/.openclaw/plugins/magic-workspace/proxies/<proxy-id>/`. The read-only projection command used by the blog publisher is:
+
+```bash
+node dist/publication-cli.js --root ~/.openclaw/plugins/magic-workspace/proxies proxy get <proxy-id>
+```
+
 ## Moxfield writes
 
 Magic Workspace uses authentication only for explicit account discovery. It does not retain Moxfield credentials or expose remote mutations. Discovered deck metadata and normalized snapshots live in the plugin SQLite database; public URLs are used for later refreshes. The existing `~/dev/magic-decks` text files remain available through the legacy tools during migration but are no longer required for newly discovered deck snapshots. Moxfield has no supported public API; authenticated writes will be added as a separate hash-bound prepare/review/apply workflow after browser-session authentication and current mutation payloads are verified.
@@ -78,11 +90,12 @@ Magic Workspace uses authentication only for explicit account discovery. It does
 {
   "workspacePath": "~/dev/magic-decks",
   "cachePath": "plugins/magic-workspace/magic.sqlite",
+  "proxyRoot": "plugins/magic-workspace/proxies",
   "commanderWorkshopDiscordTarget": "channel:1560498017394499706"
 }
 ```
 
-Both fields are optional.
+All fields are optional.
 
 ## Verification
 

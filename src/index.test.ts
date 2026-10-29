@@ -8,6 +8,7 @@ describe("magic-workspace", () => {
       "magic_moxfield_registry_status","magic_moxfield_registry_list","magic_moxfield_registry_get","magic_moxfield_registry_refresh",
       "magic_generated_deck_save","magic_generated_deck_archive","magic_deck_tag_add","magic_deck_tag_remove","magic_deck_tags_set","magic_deck_tag_summary",
       "magic_commander_random","magic_commander_theme_search","magic_commander_deck_validate",
+      "magic_proxy_create","magic_proxy_get","magic_proxy_list","magic_proxy_update","magic_proxy_archive",
       "magic_deck_list","magic_deck_get","magic_moxfield_deck_fetch","magic_deck_diff","magic_deck_sync",
       "magic_collection_sync","magic_collection_search","magic_collection_card","magic_collection_summary",
       "magic_scryfall_card","magic_scryfall_search","magic_scryfall_rulings","magic_scryfall_cache_status","magic_scryfall_cache_refresh",

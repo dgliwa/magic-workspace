@@ -14,6 +14,10 @@
         "type": "string",
         "description": "SQLite Magic Workspace data and Scryfall cache path."
       },
+      "proxyRoot": {
+        "type": "string",
+        "description": "Private managed Magic proxy root. Defaults to the Magic Workspace OpenClaw state directory."
+      },
       "commanderWorkshopDiscordTarget": {
         "type": "string",
         "pattern": "^channel:[0-9]{10,30}$",
@@ -41,6 +45,11 @@
       "magic_commander_random",
       "magic_commander_theme_search",
       "magic_commander_deck_validate",
+      "magic_proxy_create",
+      "magic_proxy_get",
+      "magic_proxy_list",
+      "magic_proxy_update",
+      "magic_proxy_archive",
       "magic_deck_list",
       "magic_deck_get",
       "magic_moxfield_deck_fetch",
