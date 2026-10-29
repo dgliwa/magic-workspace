@@ -1,11 +1,39 @@
 import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { constants as osConstants } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import sharp from "sharp";
 import { fetchScryfallCard } from "./scryfall.js";
 const ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MAX_PIXELS = 40_000_000;
 const MAX_BYTES = 50 * 1024 * 1024;
+const require = createRequire(import.meta.url);
+let sharpModule;
+function preloadLibvips() {
+    const sharpRequire = createRequire(require.resolve("sharp"));
+    for (const packageName of [`@img/sharp-libvips-linux-${process.arch}`, `@img/sharp-libvips-linuxmusl-${process.arch}`]) {
+        try {
+            const libraryPath = sharpRequire.resolve(`${packageName}/binary`);
+            try {
+                process.dlopen({ exports: {} }, libraryPath, osConstants.dlopen.RTLD_NOW | osConstants.dlopen.RTLD_GLOBAL);
+            }
+            catch (error) {
+                if (!(error instanceof Error) || !error.message.includes("Module did not self-register"))
+                    throw error;
+            }
+            return;
+        }
+        catch { }
+    }
+}
+async function loadSharp() {
+    if (!sharpModule) {
+        if (process.platform === "linux")
+            preloadLibvips();
+        sharpModule = import("sharp");
+    }
+    return sharpModule;
+}
 function slug(value) {
     return value.normalize("NFKD").replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase() || "proxy";
 }
@@ -74,6 +102,7 @@ export class ProxyStore {
         await mkdir(recordRoot, { recursive: false, mode: 0o700 });
         const artworkPath = join(recordRoot, "artwork.webp");
         try {
+            const sharp = (await loadSharp()).default;
             const image = sharp(sourcePath, { limitInputPixels: MAX_PIXELS }).rotate();
             const metadata = await image.metadata();
             if (!metadata.width || !metadata.height)
