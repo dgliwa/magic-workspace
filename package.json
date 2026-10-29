@@ -23,6 +23,7 @@
   "dependencies": {
     "csv-parse": "^7.0.3",
     "csv-stringify": "^6.6.0",
+    "sharp": "^0.35.5",
     "typebox": "^1.1.38"
   },
   "devDependencies": {
