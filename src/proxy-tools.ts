@@ -12,7 +12,7 @@ export function proxyTools(tool: any) {
   return [
     tool({
       name: "magic_proxy_create",
-      description: "Store one uploaded alternate-art Magic proxy. Resolves the exact card through Scryfall, sanitizes the local JPEG/PNG/WebP artwork into managed WebP, strips metadata, and records publication-safe metadata. This stores a private source record only; it does not create or publish a blog draft.",
+      description: "Store one uploaded alternate-art Magic proxy. Resolves the exact card through Scryfall, sanitizes the local JPEG/PNG/WebP artwork into managed WebP, strips metadata, and records card and artwork metadata.",
       parameters: Type.Object({
         sourcePath: Type.String({ minLength: 1, description: "Absolute or working-directory-relative path to the staged uploaded image." }),
         cardName: Type.String({ minLength: 1, maxLength: 500 }),
